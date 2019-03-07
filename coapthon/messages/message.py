@@ -119,12 +119,7 @@ class Message(object):
         :param value: the Token
         :raise AttributeError: if value is longer than 256
         """
-        if value is None:
-            self._token = value
-            return
-        if not isinstance(value, str):
-            value = str(value)
-        if len(value) > 256:
+        if not isinstance(value, bytes):
             raise AttributeError
         self._token = value
 

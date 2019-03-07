@@ -54,7 +54,7 @@ class Serializer(object):
                 fmt = "%ss" % token_length
                 s = struct.Struct(fmt)
                 token_value = s.unpack_from(datagram[pos:])[0]
-                message.token = token_value.decode("utf-8")
+                message.token = token_value
             else:
                 message.token = None
 
@@ -140,7 +140,7 @@ class Serializer(object):
         """
         fmt = "!BBH"
 
-        if message.token is None or message.token == "":
+        if message.token is None:
             tkl = 0
         else:
             tkl = len(message.token)
@@ -150,12 +150,9 @@ class Serializer(object):
         tmp |= tkl
 
         values = [tmp, message.code, message.mid]
-
         if message.token is not None and tkl > 0:
-
-            for b in str(message.token):
-                fmt += "c"
-                values.append(bytes(b, "utf-8"))
+            fmt += "B" * tkl
+            values.extend(message.token)
 
         options = Serializer.as_sorted_list(message.options)  # already sorted
         lastoptionnumber = 0
@@ -220,14 +217,11 @@ class Serializer(object):
             values.append(defines.PAYLOAD_MARKER)
 
             if isinstance(payload, bytes):
-                fmt += str(len(payload)) + "s"
-                values.append(payload)
+                fmt += str(len(payload)) + "B"
+                values.extend(payload)
             else:
                 fmt += str(len(bytes(payload, "utf-8"))) + "s"
                 values.append(bytes(payload, "utf-8"))
-            # for b in str(payload):
-            #     fmt += "c"
-            #     values.append(bytes(b, "utf-8"))
 
         datagram = None
         if values[1] is None:
