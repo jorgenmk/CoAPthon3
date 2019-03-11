@@ -51,7 +51,8 @@ def is_uri_option(number):
 
 
 def generate_random_token(size):
-    return ''.join(random.choice(string.ascii_letters) for _ in range(size))
+    return bytes([random.randint(0, 255) for x in range(size)])
+
 
 
 def parse_blockwise(value):

@@ -117,9 +117,9 @@ class Serializer(object):
                         if message.payload_type == defines.Content_types["application/octet-stream"]:
                             message.payload = payload
                         else:
-                            message.payload = payload.decode("utf-8")
+                            message.payload = payload
                     except AttributeError:
-                        message.payload = payload.decode("utf-8")
+                        message.payload = payload
                     pos += len(payload)
 
             return message
