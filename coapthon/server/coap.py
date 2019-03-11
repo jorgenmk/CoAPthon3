@@ -127,10 +127,15 @@ class CoAP(object):
 
         :param timeout: Socket Timeout in seconds
         """
-        self._socket.settimeout(float(timeout))
+        if self._socket.type != socket.SocketKind.SOCK_DGRAM:
+            self._socket.settimeout(float(timeout))
         while not self.stopped.isSet():
             try:
-                data, client_address = self._socket.recvfrom(4096)
+                if self._socket.type == socket.SocketKind.SOCK_DGRAM:
+                    data = self._socket.recv(4096)
+                    client_address = self._socket.getpeername()
+                else:
+                    data, client_address = self._socket.recvfrom(4096)
                 if len(client_address) > 2:
                     client_address = (client_address[0], client_address[1])
             except socket.timeout:
@@ -249,7 +254,11 @@ class CoAP(object):
             logger.debug("send_datagram - " + str(message))
             serializer = Serializer()
             message = serializer.serialize(message)
-            self._socket.sendto(message, (host, port))
+            if self._socket.type == socket.SocketKind.SOCK_DGRAM:
+                self._socket.send(message)
+            else:
+                self._socket.sendto(message, (host, port))
+
 
     def add_resource(self, path, resource):
         """

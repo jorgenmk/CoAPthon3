@@ -16,18 +16,22 @@ from coapthon.messages.response import Response
 from coapthon.serializer import Serializer
 import collections
 
-
 __author__ = 'Giacomo Tanganelli'
 
+if not os.path.isfile("logging.conf"):
+    create_logging()
 
 logger = logging.getLogger(__name__)
+logging.config.fileConfig("logging.conf", disable_existing_loggers=False)
 
 
 class CoAP(object):
     """
     Client class to perform requests to remote servers.
     """
-    def __init__(self, server, starting_mid, callback, sock=None, cb_ignore_read_exception=None, cb_ignore_write_exception=None):
+
+    def __init__(self, server, starting_mid, callback, sock=None, cb_ignore_read_exception=None,
+                 cb_ignore_write_exception=None):
         """
         Initialize the client.
 
@@ -66,6 +70,13 @@ class CoAP(object):
 
         self._receiver_thread = None
 
+    def purge_transactions(self, timeout_time=defines.EXCHANGE_LIFETIME):
+        """
+        Clean old transactions
+
+        """
+        self._messageLayer.purge(timeout_time)
+
     def close(self):
         """
         Stop the client.
@@ -97,16 +108,21 @@ class CoAP(object):
         assert isinstance(c, int)
         self._currentMID = c
 
-    def send_message(self, message):
+    def send_message(self, message, no_response=False):
         """
         Prepare a message to send on the UDP socket. Eventually set retransmissions.
 
         :param message: the message to send
+        :param no_response: whether to await a response from the request
         """
         if isinstance(message, Request):
             request = self._requestLayer.send_request(message)
             request = self._observeLayer.send_request(request)
             request = self._blockLayer.send_request(request)
+            if no_response:
+                # don't add the send message to the message layer transactions
+                self.send_datagram(request)
+                return
             transaction = self._messageLayer.send_request(request)
             self.send_datagram(transaction.request)
             if transaction.request.type == defines.Types["CON"]:
@@ -120,7 +136,7 @@ class CoAP(object):
     def _wait_for_retransmit_thread(transaction):
         """
         Only one retransmit thread at a time, wait for other to finish
-        
+
         """
         if hasattr(transaction, 'retransmit_thread'):
             while transaction.retransmit_thread is not None:
@@ -132,7 +148,7 @@ class CoAP(object):
         """
         A former request resulted in a block wise transfer. With this method, the block wise transfer
         will be continued, including triggering of the retry mechanism.
-        
+
         :param transaction: The former transaction including the request which should be continued.
         """
         transaction = self._messageLayer.send_request(transaction.request)
@@ -154,9 +170,13 @@ class CoAP(object):
         raw_message = serializer.serialize(message)
 
         try:
-            self._socket.sendto(raw_message, (host, port))
+            if self._socket.type == socket.SocketKind.SOCK_DGRAM:
+                self._socket.send(raw_message)
+            else:
+                self._socket.sendto(raw_message, (host, port))
         except Exception as e:
-            if self._cb_ignore_write_exception is not None and isinstance(self._cb_ignore_write_exception, collections.Callable):
+            if self._cb_ignore_write_exception is not None and isinstance(self._cb_ignore_write_exception,
+                                                                          collections.Callable):
                 if not self._cb_ignore_write_exception(e, self):
                     raise
 
@@ -187,7 +207,8 @@ class CoAP(object):
                 transaction.retransmit_stop = threading.Event()
                 self.to_be_stopped.append(transaction.retransmit_stop)
                 transaction.retransmit_thread = threading.Thread(target=self._retransmit,
-                                                                 name=str('%s-Retry-%d' % (threading.current_thread().name, message.mid)),
+                                                                 name=str('%s-Retry-%d' % (
+                                                                 threading.current_thread().name, message.mid)),
                                                                  args=(transaction, message, future_time, 0))
                 transaction.retransmit_thread.start()
 
@@ -237,13 +258,18 @@ class CoAP(object):
         """
         logger.debug("Start receiver Thread")
         while not self.stopped.isSet():
-            self._socket.settimeout(0.1)
             try:
-                datagram, addr = self._socket.recvfrom(1152)
+                if self._socket.type == socket.SocketKind.SOCK_DGRAM:
+                    datagram = self._socket.recv(1152)
+                    addr = self._socket.getpeername()
+                else:
+                    self._socket.settimeout(0.1)
+                    datagram, addr = self._socket.recvfrom(1152)
             except socket.timeout:  # pragma: no cover
                 continue
             except Exception as e:  # pragma: no cover
-                if self._cb_ignore_read_exception is not None and isinstance(self._cb_ignore_read_exception, collections.Callable):
+                if self._cb_ignore_read_exception is not None and isinstance(self._cb_ignore_read_exception,
+                                                                             collections.Callable):
                     if self._cb_ignore_read_exception(e, self):
                         continue
                 return
